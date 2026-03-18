@@ -3,7 +3,7 @@ name = "taskshare-service"
 version = "0.1.0"
 description = "Task management API with async background processing (Celery + Redis), built with Django REST Framework and Docker."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "django>=5.0,<6.0",
     "djangorestframework>=3.15,<3.16",
