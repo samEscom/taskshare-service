@@ -9,6 +9,7 @@ dependencies = [
     "djangorestframework>=3.15,<3.16",
     "psycopg2-binary",
     "pydantic-settings",
+    "drf-spectacular",
 ]
 
 [dependency-groups]
