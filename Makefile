@@ -1,3 +1,6 @@
+include .env
+export
+
 SHELL=/bin/bash
 PATH := .venv/bin:$(PATH)
 export TEST?=./tests
@@ -20,4 +23,17 @@ run-local:
 	@docker compose -f docker-compose-local.yml up -d db_local;
 	@uv run python manage.py runserver
 
-.PHONY: run-local install-local lint lint-fix
+makemigrations:
+	@uv run python manage.py makemigrations
+
+migrate:
+	@uv run python manage.py migrate
+
+apply-migrations:
+	@make makemigrations
+	@make migrate
+
+createsuperuser:
+	@uv run python manage.py createsuperuser
+
+.PHONY: run-local install-local lint lint-fix makemigrations migrate createsuperuser
