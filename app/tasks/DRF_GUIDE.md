@@ -32,8 +32,17 @@ El camino que sigue un dato desde que llega hasta que se guarda:
 Si ya usas un `ModelViewSet`, no necesitas cambiar a `APIView` para agregar una lógica especial. Puedes usar `@action`.
 
 - **Uso:** Se agrega como un método dentro del `ModelViewSet`.
-- **Caso de uso:** "Compartir una tarea" (`POST /tasks/123/share/`).
-- **Ventaja:** Sigues teniendo acceso automático al objeto (`self.get_object()`) sin tener que buscarlo manualmente por ID.
+- **Ejemplo Real:** "Compartir una tarea" (`POST /tasks/123/share/`).
+- **Ventaja:** DRF se encarga de buscar el objeto por ti (`self.get_object()`). Si el ID no existe en tus tareas, devuelve un 404 automáticamente.
+
+```python
+@action(detail=True, methods=['post'])
+def share(self, request, pk=None):
+    task = self.get_object() # Obtiene la tarea actual
+    user_id = request.data.get('user_id')
+    # Lógica para guardar en tabla intermedia...
+    return Response({"message": "Shared!"}, status=201)
+```
 
 ---
 
@@ -46,5 +55,63 @@ Para tareas pesadas o lentas (enviar emails, procesar imágenes, compartir), el 
 4. **Respuesta Rápida:** La API responde un código `202 Accepted` de inmediato.
 5. **Worker:** Ejecuta la tarea en segundo plano sin bloquear la API.
 
-> [!TIP]
-> Mantén tus vistas "delgadas" (lean). La lógica pesada siempre debe vivir en el Serializer o, mejor aún, en un Worker de Celery si es asíncrona.
+> [!IMPORTANT]
+> **Redis vs Postgres para Reintentos:**
+> Para "intentos de envío" (counters), es mejor dejar que Celery lo maneje en **Redis**.
+> - **Celery native retries:** Usa el decorador `@task(bind=True, max_retries=5)`.
+> - **Eficiencia:** Evitas escribir en Postgres cada vez que algo falla temporalmente.
+> - **Persistencia:** Solo guardamos en Postgres lo que debe durar para siempre (como quién compartió la tarea).
+
+---
+
+## 5. Autenticación y Usuarios (JWT)
+
+Para este proyecto, usamos **SimpleJWT** para manejar la seguridad. Aquí los dos flujos principales:
+
+### Registro de Usuario (`POST /auth/register/`)
+- **Cómo funciona:** Es una mezcla de definición propia.
+  - El **Serializer** (`UserSerializer`) usa `User.objects.create_user` para encriptar la contraseña.
+  - La **Vista** (`UserRegistrationView`) usa `generics.CreateAPIView` que ya sabe cómo guardar datos.
+- **Deducción:** Swagger lo muestra porque detecta la ruta en `urls.py` vinculada a una vista de DRF.
+
+### Login / Obtención de Token (`POST /auth/login/`)
+- **Cómo funciona:** Usamos `TokenObtainPairView` de la librería SimpleJWT.
+- **La "Magia":** Esta vista ya viene programada. Al recibir `username` y `password`:
+  1. Valida contra la tabla `auth_user`.
+  2. Genera un **Access Token** (llave de corto plazo para peticiones).
+  3. Genera un **Refresh Token** (llave de largo plazo para renovar el access).
+- **Uso:** El cliente debe guardar el `access` token y enviarlo en cada petición protegida en el header: 
+  `Authorization: Bearer <TOKEN>`
+
+### Protección de Endpoints
+Para bloquear un recurso, usamos `permission_classes = [IsAuthenticated]` en la vista. Esto obliga a DRF a verificar que el token enviado sea válido antes de ejecutar cualquier lógica.
+
+---
+
+## 6. Personalización de Lógica (Overrides)
+
+En un `ModelViewSet`, puedes modificar el comportamiento estándar sobrescribiendo sus métodos:
+
+### Filtrado por Dueño (`get_queryset`)
+Para evitar que un usuario vea los datos de otro, sobrescribimos el método que obtiene la lista:
+```python
+def get_queryset(self):
+    return Task.objects.filter(created_by=self.request.user)
+```
+
+### Borrado Lógico (`destroy`)
+Si no quieres borrar el registro de la DB sino solo marcarlo como inactivo:
+```python
+def destroy(self, request, *args, **kwargs):
+    instance = self.get_object()
+    instance.is_active = False
+    instance.save()
+    return Response(status=status.HTTP_204_NO_CONTENT)
+```
+
+### Auditoría Automática (`perform_create` / `perform_update`)
+Permiten inyectar datos (como el usuario que edita o la fecha) justo antes de guardar:
+```python
+def perform_update(self, serializer):
+    serializer.save(updated_by=self.request.user, updated_at=timezone.now())
+```
