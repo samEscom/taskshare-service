@@ -20,8 +20,14 @@ lint-fix:
 
 
 run-local:
-	@docker compose -f docker-compose-local.yml up -d db_local;
+	@docker compose -f docker-compose-local.yml up -d;
 	@uv run python manage.py runserver
+
+down-local:
+	@docker compose -f docker-compose-local.yml down
+
+run-worker:
+	@uv run celery -A config worker -l info
 
 makemigrations:
 	@uv run python manage.py makemigrations
@@ -36,4 +42,4 @@ apply-migrations:
 createsuperuser:
 	@uv run python manage.py createsuperuser
 
-.PHONY: run-local install-local lint lint-fix makemigrations migrate createsuperuser
+.PHONY: run-local down-local run-worker install-local lint lint-fix makemigrations migrate createsuperuser

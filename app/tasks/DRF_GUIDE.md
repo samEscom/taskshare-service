@@ -62,6 +62,34 @@ Para tareas pesadas o lentas (enviar emails, procesar imágenes, compartir), el 
 > - **Eficiencia:** Evitas escribir en Postgres cada vez que algo falla temporalmente.
 > - **Persistencia:** Solo guardamos en Postgres lo que debe durar para siempre (como quién compartió la tarea).
 
+### Código de Ejemplo: Implementación
+**1. Definir la tarea (`tasks.py`):**
+En lugar de procesarlo en la vista, se registra en Celery:
+```python
+from celery import shared_task
+import time
+
+@shared_task(bind=True, max_retries=5)
+def send_email(self, user_id, task_id):
+    try:
+        # Lógica pesada, red, o lenta...
+        time.sleep(2) 
+        return True
+    except Exception as exc:
+        # Celery vuelve a encolarlo inteligentemente (Exponential Backoff)
+        self.retry(exc=exc, countdown=5 ** self.request.retries)
+```
+
+**2. Enviar a la cola (`views.py`):**
+Nunca uses `send_email(user_id, task_id)` directamente, ya que eso congelaría la API esos 2 segundos (o lo que tarde). **Siempre usa `.delay()`:**
+```python
+# Manda el trabajo a Redis y continúa a la siguiente línea al instante
+send_email.delay(user_id=1, task_id="uuid-123")
+
+# Responde al cliente de volada
+return Response({"message": "Correo encolado"}, status=201)
+```
+
 ---
 
 ## 5. Autenticación y Usuarios (JWT)
